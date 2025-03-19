@@ -112,9 +112,9 @@ def main():
     st.title("🌱 Agriculture Suitability & Farming Guide")
     st.write("Enter a location (latitude & longitude) and month to check agricultural suitability.")
 
-    lat = st.number_input("Enter Latitude", value=52.52, format="%.6f")
-    lon = st.number_input("Enter Longitude", value=13.405, format="%.6f")
-    month = st.selectbox("Select the Month", options=list(range(1, 13)))
+    lat = st.number_input("Enter Latitude", value=52.52, format="%.6f", key="latm")
+    lon = st.number_input("Enter Longitude", value=13.405, format="%.6f", key="lonm")
+    month = st.selectbox("Select the Month", options=list(range(1, 13)), key="monthm")
 
     if st.button("Predict Suitability"):
         climate_data = fetch_climate_data(lat, lon)
@@ -148,6 +148,147 @@ def main():
         m = folium.Map(location=[lat, lon], zoom_start=10)
         folium.Marker([lat, lon], popup=f"Prediction: {status}").add_to(m)
         folium_static(m)
+        
+def fetch_climate_data(lat, lon):
+    """Fetch climate and sunlight data using OpenWeather API."""
+    OPENWEATHER_API_KEY = "d315bc077639441a5e59443eed999c9c"  # Replace with valid key
+    url = f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={OPENWEATHER_API_KEY}&units=metric"
+    response = requests.get(url)
+    
+    if response.status_code == 200:
+        data = response.json()
+        return {
+            "temperature": data["main"]["temp"],
+            "humidity": data["main"]["humidity"],
+            "sunlight_hours": random.randint(6, 12)  # Placeholder for sunlight data
+        }
+    return None
+
+def fetch_soil_data(lat, lon):
+    """Fetch soil quality data using local Ollama model."""
+    prompt = f"""
+    Analyze soil conditions for agriculture at the location:
+    - Latitude: {lat}
+    - Longitude: {lon}
+    
+    Provide details on:
+    - Soil fertility
+    - Moisture levels
+    - pH value
+    - Organic matter
+    - Any potential issues for farming.
+    """
+    
+    response = ollama.chat(model="deepseek-r1:1.5b", messages=[{"role": "user", "content": prompt}])
+    
+    if response:
+        return response["message"]["content"]  # Extract soil data
+    return "Soil data unavailable."
+
+def predict_agriculture_suitability(climate_data, soil_data, month):
+    """Determine if the location is suitable for agriculture based on climate, soil, and month."""
+    if climate_data and soil_data:
+        temp = climate_data["temperature"]
+        humidity = climate_data["humidity"]
+        sunlight = climate_data["sunlight_hours"]
+
+        # Ask DeepSeek R1 to analyze and refine the prediction
+        analysis_prompt = f"""
+        Given the climate data:
+        - Temperature: {temp}°C
+        - Humidity: {humidity}%
+        - Sunlight: {sunlight} hours/day
+
+        And the soil data:
+        {soil_data}
+
+        For the month of {month}, analyze if this location is good for agriculture.
+        Suggest the best crops to grow and any necessary improvements.
+        """
+        
+        response = ollama.chat(model="deepseek-r1:1.5b", messages=[{"role": "user", "content": analysis_prompt}])
+        
+        if response:
+            return "Analysis Complete", response["message"]["content"]
+    
+    return "Unknown", "Could not fetch data. Please try again."
+
+def predict_market_for_crop(crop, month):
+    """Predict the market demand for a given crop based on current trends."""
+    # Example: A simulated response from an AI model or data source
+    prompt = f"""
+    Predict the market trends for the crop {crop} in the month of {month}.
+    Suggest the possible markets where this crop is in high demand during that month and any other relevant market trends.
+    """
+    
+    response = ollama.chat(model="deepseek-r1:1.5b", messages=[{"role": "user", "content": prompt}])
+    
+    if response:
+        return response["message"]["content"]
+    return "Market data unavailable."
+
+
+# Main Streamlit interface
+def main():
+    # Title for the app
+    st.title("🌱 AI Assistant for Personalized Farming Guidance and Market Trends")
+
+    # User selects what they want: Farming Suitability or Market Trends
+    option = st.radio("Select Assistant Mode", ("AI Assistant for Farming Suitability", "AI Assistant for Crop Market Trends"))
+    
+    # Common inputs: Location (Latitude & Longitude), Month, and Crop (if applicable)
+    lat = st.number_input("Enter Latitude", value=52.52, format="%.6f", key="lat")
+    lon = st.number_input("Enter Longitude", value=13.405, format="%.6f", key="lon")
+    month = st.selectbox("Select the Month", options=list(range(1, 13)), key="month")
+    
+    # Show different sections based on the option selected
+    if option == "AI Assistant for Farming Suitability":
+        st.write("Enter a crop and month to check farming suitability.")
+
+        crop = st.text_input("Enter Crop Name", value="Wheat", key="crop")
+
+        if st.button("Predict Suitability"):
+            # Fetch Climate and Soil Data
+            climate_data = fetch_climate_data(lat, lon)
+            soil_data = fetch_soil_data(lat, lon)
+
+            if soil_data:
+                st.subheader("🌍 Soil Data Analysis")
+                st.write(soil_data)
+
+            # Generate and display farming steps
+            st.subheader("📜 Farming Guide")
+            farming_guide = generate_farming_steps(crop)
+            st.write(farming_guide)
+
+            # Show map with marker
+            m = folium.Map(location=[lat, lon], zoom_start=10)
+            folium.Marker([lat, lon], popup=f"Farming Guide for {crop}").add_to(m)
+            folium_static(m)
+
+    elif option == "AI Assistant for Crop Market Trends":
+        st.write("Enter a crop and month to predict global market demand.")
+
+        crop = st.text_input("Enter Crop Name", value="Wheat", key="crop")
+
+        if st.button("Predict Suitability & Market Trends"):
+            # Fetch Climate and Soil Data (if needed, for better predictions)
+            climate_data = fetch_climate_data(lat, lon)
+            soil_data = fetch_soil_data(lat, lon)
+            
+            if soil_data:
+                st.subheader("🌍 Soil Data Analysis")
+                st.write(soil_data)
+
+            # Market Demand Prediction using AI Assistant
+            market_trends = ai_assistant_for_crop_market(crop, month)
+            st.subheader(f"📈 Market Demand for {crop} in Month {month}")
+            st.write(market_trends)
+
+            # Show map with marker
+            m = folium.Map(location=[lat, lon], zoom_start=10)
+            folium.Marker([lat, lon], popup=f"Market Trends for {crop}").add_to(m)
+            folium_static(m)
 
 if __name__ == "__main__":
     main()
